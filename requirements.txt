@@ -1,0 +1,10 @@
+# Core library (SA-SVD math) needs only torch.
+torch>=2.1
+
+# Full reproduction (scripts/reproduce.py) additionally needs:
+transformers>=4.45
+peft>=0.14
+gptqmodel>=1.0
+trl>=0.12
+datasets>=2.20
+matplotlib>=3.7

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sa-svd-qa-lora"
+version = "0.1.0"
+description = "Structure-Aware SVD initialization for QA-LoRA fine-tuning of 2-bit LLMs"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Khiem Ton-That" }]
+dependencies = [
+    "torch>=2.1",
+]
+
+[project.optional-dependencies]
+# Needed only for the full reproduction (scripts/reproduce.py), not the core lib.
+reproduce = [
+    "transformers>=4.45",
+    "peft>=0.14",
+    "gptqmodel>=1.0",
+    "trl>=0.12",
+    "datasets>=2.20",
+    "matplotlib>=3.7",
+]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"

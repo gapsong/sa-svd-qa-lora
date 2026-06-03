@@ -1,0 +1,4 @@
+{
+  "baseline": {"method": "baseline", "rank": 16, "group_size": 16, "wikitext_ppl": 172.3},
+  "sa_svd":   {"method": "sa_svd",   "rank": 16, "group_size": 16, "wikitext_ppl": 26.1}
+}
