@@ -1,10 +1,18 @@
 # Core library (SA-SVD math) needs only torch.
-torch>=2.1
+torch==2.12.0
 
-# Full reproduction (scripts/reproduce.py) additionally needs:
-transformers>=4.45
-peft>=0.14
-gptqmodel>=1.0
-trl>=0.12
-datasets>=2.20
-matplotlib>=3.7
+# Full reproduction (scripts/reproduce.py): exact stack tested on 2026-06-03
+# (python 3.10, CUDA 13.0, single RTX 4090). The loose ">=" floors in
+# pyproject.toml can resolve to mutually incompatible versions; these pins are
+# a known-working combination.
+transformers==5.9.0
+peft==0.19.1
+gptqmodel==6.0.3
+trl==1.5.1
+datasets==4.8.5
+accelerate==1.13.0
+optimum==2.1.0
+matplotlib==3.10.9
+
+# transformers 5.9 breaks with kernels >= 0.13 (hub_kernels crash); keep this pin.
+kernels==0.12.3

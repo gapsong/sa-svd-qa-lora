@@ -41,6 +41,12 @@ TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj",
            "gate_proj", "up_proj", "down_proj"]
 RESULTS_PATH = ROOT / "results" / "results.json"
 
+# Per-model max learning rate (thesis Table 4.1). Qwen2 trains unstably at 1e-4
+# (loss spikes), so it needs 3e-5; TinyLlama and SmolLM2 use 1e-4. Matched by
+# substring against --model-id. An explicit --lr overrides this.
+DEFAULT_LR = 1e-4
+MODEL_LR = {"Qwen2-1.5B": 3e-5}
+
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__,
@@ -53,7 +59,9 @@ def parse_args():
     p.add_argument("--max-steps", type=int, default=750)
     p.add_argument("--batch-size", type=int, default=4)
     p.add_argument("--grad-accum", type=int, default=4)
-    p.add_argument("--lr", type=float, default=1e-4)
+    p.add_argument("--lr", type=float, default=None,
+                   help="Max learning rate. If unset, uses the thesis per-model "
+                        "default (3e-5 for Qwen2, else 1e-4).")
     p.add_argument("--n-train-samples", type=int, default=10_000)
     p.add_argument("--seed", type=int, default=0)
     return p.parse_args()
@@ -105,7 +113,7 @@ def run_one(method: str, args) -> dict:
     # ----- Evaluate WikiText-2 perplexity. -----
     ppl = evaluate_wikitext(peft_model, tokenizer)
     print(f"[{method}] WikiText-2 perplexity: {ppl:.2f}")
-    return {"method": method, "rank": args.rank,
+    return {"method": method, "model": args.model_id, "rank": args.rank,
             "group_size": args.group_size, "wikitext_ppl": ppl}
 
 
@@ -113,13 +121,21 @@ def main():
     args = parse_args()
     methods = ["baseline", "sa_svd"] if args.method == "both" else [args.method]
 
+    if args.lr is None:
+        args.lr = next((lr for key, lr in MODEL_LR.items() if key in args.model_id),
+                       DEFAULT_LR)
+        print(f"Using learning rate {args.lr:g} for {args.model_id}")
+
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     results = {}
     if RESULTS_PATH.exists():
         results = json.loads(RESULTS_PATH.read_text())
 
+    # Results are keyed by model so multiple models can accumulate in one file:
+    # {model_name: {method: {...}}}.
+    model_key = args.model_id.split("/")[-1]
     for m in methods:
-        results[m] = run_one(m, args)
+        results.setdefault(model_key, {})[m] = run_one(m, args)
         RESULTS_PATH.write_text(json.dumps(results, indent=2))
         print(f"Saved -> {RESULTS_PATH}")
 

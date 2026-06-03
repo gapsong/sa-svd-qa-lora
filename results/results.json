@@ -1,4 +1,50 @@
 {
-  "baseline": {"method": "baseline", "rank": 16, "group_size": 16, "wikitext_ppl": 172.3},
-  "sa_svd":   {"method": "sa_svd",   "rank": 16, "group_size": 16, "wikitext_ppl": 26.1}
+  "SmolLM2-1.7B": {
+    "baseline": {
+      "method": "baseline",
+      "model": "HuggingFaceTB/SmolLM2-1.7B",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 42.451358795166016
+    },
+    "sa_svd": {
+      "method": "sa_svd",
+      "model": "HuggingFaceTB/SmolLM2-1.7B",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 36.02107238769531
+    }
+  },
+  "TinyLlama_v1.1": {
+    "baseline": {
+      "method": "baseline",
+      "model": "TinyLlama/TinyLlama_v1.1",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 34.62638473510742
+    },
+    "sa_svd": {
+      "method": "sa_svd",
+      "model": "TinyLlama/TinyLlama_v1.1",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 28.68014144897461
+    }
+  },
+  "Qwen2-1.5B": {
+    "baseline": {
+      "method": "baseline",
+      "model": "Qwen/Qwen2-1.5B",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 53.15167236328125
+    },
+    "sa_svd": {
+      "method": "sa_svd",
+      "model": "Qwen/Qwen2-1.5B",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 27.608945846557617
+    }
+  }
 }

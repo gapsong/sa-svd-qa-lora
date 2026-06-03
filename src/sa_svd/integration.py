@@ -111,8 +111,20 @@ def write_adapter_weights(
 
             a_dst = lora_A[adapter_name].weight
             b_dst = lora_B[adapter_name].weight
-            a_src = weights["lora_A"].to(a_dst.dtype, a_dst.device)
-            b_src = weights["lora_B"].to(b_dst.dtype, b_dst.device)
+
+            # core.py builds the residual for an adapter that acts as
+            # B @ expand(A) @ x  ( == B @ A @ groupSUM(x) ). PEFT's QA-LoRA forward
+            # instead applies  scaling * (groupMEAN(x) * n_groups) @ A.T @ B.T,
+            # i.e. it scales the contribution by  scaling * n_groups / group_size.
+            # Rescale A by the inverse so PEFT reproduces core.py's intended
+            # contribution and  residual + adapter  reconstructs W at init.
+            scaling = module.scaling[adapter_name]
+            group_size = module.qalora_group_size[adapter_name]
+            n_groups = a_dst.shape[1]
+            qalora_scale = group_size / (scaling * n_groups)
+
+            a_src = weights["lora_A"].to(device=a_dst.device, dtype=a_dst.dtype) * qalora_scale
+            b_src = weights["lora_B"].to(device=b_dst.device, dtype=b_dst.dtype)
 
             if a_dst.shape != a_src.shape or b_dst.shape != b_src.shape:
                 raise ValueError(

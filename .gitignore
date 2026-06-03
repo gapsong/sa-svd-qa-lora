@@ -6,6 +6,9 @@ build/
 dist/
 _ckpt/
 .pytest_cache/
+# gptqmodel writes logs and offload dirs into the CWD
+gptq_log_*.log
+gptqmodel_offload/
 *.safetensors
 *.bin
 .DS_Store
