@@ -260,3 +260,80 @@ The two sentences most in need of rewording, independent of any new runs:
 
 Do not edit those files from this branch until E1/E2 results exist; the
 rewording should cite evidence, not just suspicion.
+
+---
+
+## 7. E1 results (2026-06-04): the residual-base confound is structurally dead
+
+Ran `research/e1_quant_probe.py` on SmolLM2-1.7B, all 168 target layers,
+rank 16, group_size 16, 2-bit asymmetric per-group RTN as the GPTQ proxy.
+Raw numbers in `research/e1_results.json`.
+
+### Measured
+
+| metric (numel-weighted, all layers) | W (baseline) | R (sa_svd) |
+|--------------------------------------|--------------|------------|
+| reconstruction error of W, rel. Frobenius | 0.3286 | 0.3286 |
+| mean distinct levels used per group (max 4) | 3.991 | 3.991 |
+| mean modal-level occupancy | 0.460 | 0.460 |
+
+The ratio is not approximately 1, it is exactly 1: per-layer spot checks show
+the error difference is bitwise 0.0. Meanwhile the subtracted component is not
+small: `||B·expand(A)||_F / ||W||_F` ranges from ~0.18 (layer-0 attention) to
+~0.07 (late down_proj), so this is not "residual equals W".
+
+### Why: a shift-equivariance theorem
+
+`expand(A)` repeats each pooled column `group_size` times, so `B·expand(A)`
+is **constant within every quantization group**. For any per-group asymmetric
+quantizer whose grid is anchored to the group (min/max or MSE-optimal scale
+with a continuous zero-point), subtracting a constant c from a group shifts
+min and max equally: range, scale, and codes are unchanged and
+`Q(g - c) = Q(g) - c` exactly. Therefore:
+
+- The per-group dynamic range of R **equals** that of W. A1's premise
+  (component removal shrinks group range and tames outliers) is not just
+  unsupported, it is mathematically impossible. This is the same structural
+  property that lets QA-LoRA merge the adapter into the zero-point.
+- Under the idealized quantizer, `Q(R) + B·expand(A) = Q(W)`: the sa_svd
+  arm's reconstruction at init is *identical* to the baseline's quantized
+  model. There is no "easier quantization target".
+
+### Caveat: the real stack is not exactly equivariant
+
+Stock gptqmodel quantizes the zero-points themselves (the thesis fork is
+named `qzero_unquantized` precisely because it removes this), and GPTQ's
+calibration-driven error compensation acts on top. The measured init-only
+PPLs (baseline ~12.2k vs sa_svd ~25.8k, run-2026-06-03.md:20-21) prove the
+deviation is real at PPL level. Direction of that data point: the residual
+base came out **worse** at init, not better. So the only known deviation from
+equivariance points *against* H_base, not for it.
+
+### Verdict and updated ranking
+
+- **A1/B1 downgraded HIGH to LOW.** The textual point stands (the matrix fed
+  to GPTQ does differ, and README.md:20 could still note the zero-point
+  caveat in one clause), but the substantive confound is dead: to first order
+  the quantized base is the same, so the measured benefit must come from the
+  adapter side. H_base has no mechanism left and one opposing data point.
+- C2's surviving threats are now **A2 (single seed)** and **B4 (scale vs
+  direction)**, in that order. Updated ranking: (1) A2, (2) B4, (3) B2/B3
+  wording, (4) A4, (5) A3/A5.
+- Side observation: no collapse signature on this stack's proxy (groups use
+  ~3.99 of 4 levels; modal occupancy 0.46). Consistent with the run note's
+  "no collapse on the modern stack" finding, now also visible in weight space
+  without any training.
+- Side observation for the README narrative: the adapter component carries
+  7-18% of W's Frobenius energy. "Carries the dominant structure of the
+  original weights" is true in the pooled space SA-SVD decomposes, but in
+  full weight space the init is a modest correction, not the bulk of W.
+
+### Registered prediction for E2
+
+Under stock gptqmodel, residual-base + PEFT-default random adapter (E2)
+should land near the baseline's 42.5, because the base is (to first order)
+the same quantized model and the random init contributes zero at step 0. If
+it instead lands near sa_svd's 36.0, the zero-point quantization path is
+doing real work and this section's first-order analysis is wrong in an
+interesting way. Either outcome is informative; the prediction is logged
+before the run.
