@@ -104,6 +104,8 @@ def main():
     )
 
     # Apply the candidate init. Residual derived here: function preserved.
+    # Contract extension: build_init may return None to mean "leave the PEFT
+    # default adapter untouched" (the pure-baseline control arm).
     names = find_target_linears(model, TARGETS)
     adapters = {}
     for name in names:
@@ -112,9 +114,13 @@ def main():
         out_f, in_f = W.shape
         n_groups = in_f // args.group_size
 
-        lora_A, lora_B = init_fn.build_init(
+        built = init_fn.build_init(
             W, rank=args.rank, group_size=args.group_size, seed=args.seed
         )
+        if built is None:
+            adapters = None
+            break
+        lora_A, lora_B = built
         lora_A = lora_A.to(device=W.device, dtype=torch.float32)
         lora_B = lora_B.to(device=W.device, dtype=torch.float32)
         if lora_A.shape != (args.rank, n_groups) or lora_B.shape != (out_f, args.rank):
@@ -131,9 +137,12 @@ def main():
         model, tokenizer, rank=args.rank, group_size=args.group_size,
         seed=args.seed,
     )
-    n = write_adapter_weights(peft_model, adapters)
-    if n != len(names):
-        raise RuntimeError(f"wrote {n} adapter layers, expected {len(names)}")
+    if adapters is None:
+        print("init_fn returned None: keeping PEFT default adapter init.")
+    else:
+        n = write_adapter_weights(peft_model, adapters)
+        if n != len(names):
+            raise RuntimeError(f"wrote {n} adapter layers, expected {len(names)}")
 
     data = load_dataset("tatsu-lab/alpaca", split=f"train[:{args.n_train_samples}]")
     train(peft_model, tokenizer, data, args)

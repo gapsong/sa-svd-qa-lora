@@ -47,6 +47,59 @@ takes ~190s (GPTQ ~2 min, not ~12; earlier estimates were inflated by GPU
 sharing). A loop AT THE TARGET MODEL is feasible once the smallest budget
 with the correct ordering is found (crossover bisection: 450, then 300).
 
+## v6-v11 (2026-06-05): the detective arc, ending in an upstream PEFT bug
+
+All runs 1.7B, rank 16, 2x8, seed 0 unless noted. Full eval = whole
+WikiText-2 test via --eval-tokens 999999 (identical protocol to pipeline).
+
+| v | arm | steps | eval | PPL |
+|---|-----|-------|------|-----|
+| v6 | sa_svd / zero(written) | 450 | subset | 37.02 / 32.95 |
+| v7 | sa_svd / zero(written) | 750 | subset | 36.03 / 32.01 |
+| v8 | zero(written) | 750 | FULL | 33.46 |
+| v9 | zero(written) seeds 1,2 | 750 | FULL | 33.16 / 33.81 |
+| v9 | full-scale-A control | 750 | FULL | 33.87 |
+| v10 | untied full-scale A | 750 | FULL | 34.78 |
+| v11 | PEFT default (untouched) seed 1 | 750 | FULL | **12230.68, did not train** |
+
+Falsified along the way: the A-scale hypothesis (v9 control: 0.125x and 1x
+both ~33.5-33.9), the subset-eval-artifact hypothesis for 750 steps (v8:
+full eval confirms 33.5), layer-tying as main driver (v10: untied still
+34.78, tying worth ~1 PPL at most).
+
+**v11 + tensor probe found the root cause.** The untouched PEFT-default
+QA-LoRA adapter has lora_A = 0 AND lora_B = 0 (probed directly: all zeros,
+fp32, cuda). That is an exact saddle point: grad(A) ~ B = 0, grad(B) ~ A =
+0, the adapter can never train. v11's PPL equals the unadapted quantized
+model (the known ~12.2k init PPL). Source of the bug (peft 0.19.1):
+lora/layer.py update_layer kaiming-inits lora_A (line 243), THEN the
+QALoRA variant init REPLACES lora_A with a fresh nn.Linear (line 248 ->
+variants.py:486) whose initialization never lands on the GPTQ layer path;
+the result is uninitialized memory: zero pages on a fresh GPU (today),
+arbitrary junk otherwise. reset is never re-run after the replacement.
+
+**Consequences, in order of severity:**
+1. Every "baseline (random init)" number in this project was measured
+   against an UNINITIALIZED adapter, not a Kaiming init: the E3 baselines
+   (38-42, spread 4.2) were junk-memory inits, unseeded by construction,
+   which explains their anomalous spread. The honest Kaiming baseline is
+   the harness-written v10 arm: 34.78 (1 seed), which BEATS sa_svd
+   (35.87 +/- 0.2, 3 seeds). Verification seeds running.
+2. The Qwen2 "did not train, inf grads" baseline and E2's no-train arm are
+   reinterpreted: dead or pathological junk adapters, not a regime
+   property. The budget-dependence story (v5/v6) collapses too: its
+   "zero" arms were written (valid) but its comparison target was always
+   confounded.
+3. sa_svd's own numbers are unaffected (its adapters were always written
+   via write_adapter_weights), but its 9/9 win was against a broken
+   opponent. The corrected comparison is sa_svd vs written-Kaiming, and
+   on current evidence sa_svd LOSES it by ~1 PPL.
+4. Upstream bug report due against peft (QALoRA variant init order),
+   with the probe and v11 as evidence. Ironic note: the QA-LoRA
+   integration originates from this project's own PRs (#2571, #2664).
+5. The 135M/360M size-series flips (v1-v4) compared written arms against
+   written arms and remain internally valid.
+
 **Research finding worth keeping regardless of the loop:** on the stock
 quantizer, SA-SVD inverts (hurts) on a small, heavily damaged model under
 short budgets, and the deficit shrinks as budget grows. This adds a model
