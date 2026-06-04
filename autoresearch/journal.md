@@ -100,6 +100,37 @@ arbitrary junk otherwise. reset is never re-run after the replacement.
 5. The 135M/360M size-series flips (v1-v4) compared written arms against
    written arms and remain internally valid.
 
+## v12 (2026-06-05): verdict. The corrected baseline beats SA-SVD 9/9.
+
+Written-Kaiming baseline (untied, full scale, the init PEFT *intended* as
+default), 1.7B, 750 steps, full eval, seeds 0/1/2: **34.78 / 33.51 / 33.96**
+(mean 34.08, spread 1.27). Against sa_svd's 36.02 / 35.61 / 35.99 (mean
+35.87, spread 0.41): the corrected baseline wins **all 9 pairings**, worst
+Kaiming seed (34.78) vs best sa_svd seed (35.61), margin 0.83 PPL.
+
+**Corrected headline for the pinned stack: a properly initialized random
+QA-LoRA adapter beats SA-SVD by ~1.8 PPL mean. SA-SVD's previously
+measured 9/9 advantage was an artifact of comparing against PEFT's broken
+(uninitialized) default adapter.** What remains to SA-SVD on this stack:
+lower seed spread (0.41 vs 1.27) and determinism; not the mean.
+
+Scope notes, carefully: (1) This concerns the pinned Option-A stack
+(upstream peft 0.19.1 + stock gptqmodel). The thesis-era stack used a
+different QA-LoRA implementation; the thesis collapse-regime claims are
+not automatically affected and the fork test remains open. (2) The
+TinyLlama and Qwen2 baseline columns in results.json are invalidated the
+same way (junk-init opponents); the sa_svd columns stand as absolute
+numbers. (3) README/CLAUDE.md/results corrections on main are required but
+should land as one coherent rewrite after the upstream bug is reported and
+the E-series mechanism findings are re-read against the corrected
+baseline (the E4/E6 within-written comparisons remain valid since all
+arms there were written).
+
+To do, in order: upstream PEFT issue (variant init order; fix is to re-run
+reset_lora_parameters after the variant replaces lora_A, or init inside
+the variant), re-run TinyLlama/Qwen2 baselines with written Kaiming,
+then the public-text rewrite.
+
 **Research finding worth keeping regardless of the loop:** on the stock
 quantizer, SA-SVD inverts (hurts) on a small, heavily damaged model under
 short budgets, and the deficit shrinks as budget grows. This adds a model
