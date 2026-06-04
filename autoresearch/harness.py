@@ -76,7 +76,11 @@ def main():
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--grad-accum", type=int, default=1)
     p.add_argument("--lr", type=float, default=1e-4)
-    p.add_argument("--rank", type=int, default=16)
+    # rank 4, not 16: the proxy must match the TARGET's rank/n_groups ratio
+    # (1.7B: 16/128 = 0.125; 135M attention: 4/36 = 0.11). At 16/36 = 0.44 the
+    # zero-point non-equivariance dominates and the proxy inverts the known
+    # sa_svd-vs-zero ordering (journal v1, exp 0c).
+    p.add_argument("--rank", type=int, default=4)
     p.add_argument("--group-size", type=int, default=16)
     p.add_argument("--n-train-samples", type=int, default=2400)
     p.add_argument("--eval-tokens", type=int, default=60_000)

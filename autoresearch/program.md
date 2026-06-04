@@ -16,9 +16,17 @@ GPTQ SmolLM2-135M fine-tuned with QA-LoRA for a fixed budget, by changing
   always W: candidates cannot cheat by changing the model, only the adapter
   parameterization. Any randomness must use `seed`.
 - Everything else is FIXED: harness.py, the budget knobs (150 steps, batch
-  16, lr 1e-4, rank 16, group 16, 2400 Alpaca samples, 60k eval tokens), the
+  16, lr 1e-4, rank 4, group 16, 2400 Alpaca samples, 60k eval tokens), the
   model, the data. Changing a budget knob invalidates the journal.
 - One cycle = `bash autoresearch/run.sh` (two seeds, prints MEAN).
+- **Why rank 4 (proxy v2):** the proxy must match the target's
+  rank/n_groups ratio (1.7B: 16/128 = 0.125; here 4/36 = 0.11). Journal v1
+  ran rank 16 (ratio 0.44): the adapter component carried so much of the
+  pooled spectrum that the zero-point non-equivariance broke the SA-SVD
+  arm's starting function (loss 10.1 vs 7.2 at step 10) and inverted the
+  known sa_svd-vs-zero ordering. New constraint learned: SA-SVD assumes
+  rank << n_groups; validate any proxy with a discrimination check before
+  trusting it.
 
 ## Keep / revert rule
 
