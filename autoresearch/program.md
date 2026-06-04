@@ -23,11 +23,12 @@ GPTQ SmolLM2-135M fine-tuned with QA-LoRA for a fixed budget, by changing
 ## Keep / revert rule
 
 Keep a candidate only if its MEAN improves on the current best MEAN by more
-than the noise threshold. Provisional threshold: **0.3 PPL**, to be
-calibrated by running the SA-SVD reference cycle twice before the first real
-experiment (the E3 lesson from the 1.7B runs: single-seed deltas up to 2.7
-PPL were pure noise). Record every experiment in `journal.md` regardless of
-verdict: failures are data.
+than the noise threshold. Calibrated 2026-06-05: two identical reference
+cycles differed by 2.30 PPL in MEAN (GPU nondeterminism at fixed seeds), so
+the threshold is **5.0 PPL** (about 2x observed cycle noise; the E3 lesson
+from the 1.7B runs applied before drawing conclusions this time). Reference
+MEAN: 435.22. Record every experiment in `journal.md` regardless of verdict:
+failures are data.
 
 ## Journal protocol (journal.md, append-only)
 
