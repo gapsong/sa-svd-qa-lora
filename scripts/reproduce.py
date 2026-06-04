@@ -51,8 +51,12 @@ MODEL_LR = {"Qwen2-1.5B": 3e-5}
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--method", choices=["baseline", "sa_svd", "both"],
-                   default="both")
+    p.add_argument("--method",
+                   choices=["baseline", "sa_svd", "both", "residual_random"],
+                   default="both",
+                   help="residual_random is the E2 ablation arm "
+                        "(research/red-team.md): SA-SVD residual base, but "
+                        "PEFT default adapter init instead of SA-SVD A/B.")
     p.add_argument("--model-id", default=MODEL_ID)
     p.add_argument("--rank", type=int, default=16)
     p.add_argument("--group-size", type=int, default=16)
@@ -64,6 +68,9 @@ def parse_args():
                         "default (3e-5 for Qwen2, else 1e-4).")
     p.add_argument("--n-train-samples", type=int, default=10_000)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--results-path", type=Path, default=RESULTS_PATH,
+                   help="Where to accumulate the results JSON "
+                        "(default: results/results.json).")
     return p.parse_args()
 
 
@@ -84,7 +91,9 @@ def run_one(method: str, args) -> dict:
     )
 
     sa_svd_adapters = None
-    if method == "sa_svd":
+    if method in ("sa_svd", "residual_random"):
+        # residual_random swaps in the residual base exactly like sa_svd but
+        # then discards the adapter components, leaving PEFT's default init.
         names = find_target_linears(model, TARGETS)
         print(f"Applying SA-SVD to {len(names)} layers ...")
         sa_svd_adapters = apply_sa_svd_to_base(
@@ -126,18 +135,18 @@ def main():
                        DEFAULT_LR)
         print(f"Using learning rate {args.lr:g} for {args.model_id}")
 
-    RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    args.results_path.parent.mkdir(parents=True, exist_ok=True)
     results = {}
-    if RESULTS_PATH.exists():
-        results = json.loads(RESULTS_PATH.read_text())
+    if args.results_path.exists():
+        results = json.loads(args.results_path.read_text())
 
     # Results are keyed by model so multiple models can accumulate in one file:
     # {model_name: {method: {...}}}.
     model_key = args.model_id.split("/")[-1]
     for m in methods:
         results.setdefault(model_key, {})[m] = run_one(m, args)
-        RESULTS_PATH.write_text(json.dumps(results, indent=2))
-        print(f"Saved -> {RESULTS_PATH}")
+        args.results_path.write_text(json.dumps(results, indent=2))
+        print(f"Saved -> {args.results_path}")
 
     print("\nDone. Render the chart with: python scripts/plot_results.py")
 
