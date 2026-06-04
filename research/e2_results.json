@@ -1,0 +1,11 @@
+{
+  "SmolLM2-1.7B": {
+    "residual_random": {
+      "method": "residual_random",
+      "model": "HuggingFaceTB/SmolLM2-1.7B",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 2524.87939453125
+    }
+  }
+}

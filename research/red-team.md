@@ -337,3 +337,83 @@ it instead lands near sa_svd's 36.0, the zero-point quantization path is
 doing real work and this section's first-order analysis is wrong in an
 interesting way. Either outcome is informative; the prediction is logged
 before the run.
+
+---
+
+## 8. E2 results (2026-06-04): prediction falsified, H_base dead, C2 sharpened
+
+Ran `scripts/reproduce.py --method residual_random` (added on this branch,
+commit d35af40): SA-SVD residual swap on the base, PEFT default adapter init
+(A Kaiming, B zero), otherwise the exact baseline conditions (SmolLM2-1.7B,
+lr 1e-4, seed 0, 750 steps, batch 4x4). Raw record in
+`research/e2_results.json`; log in /tmp/e2_residual_random.log.
+
+| arm | base fed to GPTQ | adapter init | WikiText PPL |
+|-----|------------------|--------------|--------------|
+| baseline (2026-06-03) | W | random | 42.45 |
+| sa_svd (2026-06-03) | R | SA-SVD A/B | 36.02 |
+| residual_random (E2) | R | random | **2524.88, did not train** |
+
+The E2 arm showed grad_norm inf at every logged step, loss flat at 16.5-16.6,
+mean token accuracy exactly 0 for all 750 steps. With inf gradient norm,
+TRL's gradient clipping scales updates by 1/inf = 0, so the final model is
+effectively the init model. 2524.88 is the perplexity of the bare
+residual-quantized base, not of anything trained.
+
+### The registered prediction was wrong, and the error is instructive
+
+Section 7 predicted ~42.5 "because the base is (to first order) the same
+quantized model". That conflated quantization **error** with the base
+**function**. The theorem gives `Q(R) = Q(W) - B*expand(A)`: identical error,
+but a different function. The baseline starts at the function Q(W); the E2
+arm starts at Q(W) minus the principal pooled component (7-18% of weight
+energy per layer), which is a catastrophically broken model, and from there
+random-init QA-LoRA cannot train at all.
+
+### What the triple actually establishes
+
+1. **H_base is conclusively dead, from both sides.** E1: the residual earns
+   no quantization-error advantage (provably zero under the proxy). E2: the
+   residual base on its own is not a better substrate but a vastly worse one.
+   Nothing of SA-SVD's benefit comes from "an easier quantization target".
+2. **C2 survives and is sharpened.** By the shift theorem, sa_svd's init
+   function is Q(R) + B*expand(A) = Q(W) up to zero-point rounding, i.e.
+   approximately the same function the baseline starts at (its B = 0). Same
+   starting function, different parameter-space coordinates, 36.02 vs 42.45
+   after identical budgets. The benefit is therefore a parameterization and
+   optimization effect, which is what C2 claimed. What remains open is only
+   the mechanism inside that effect: principal directions (H_init) vs merely
+   a large, structured, nonzero starting point (B4's scale story).
+3. **The Qwen2 open question gets a data point.** The inf-grad signature
+   (grad_norm inf every step, zero learning, loss pinned) was reproduced on
+   SmolLM2 by handing it a sufficiently broken init function. This supports
+   the hypothesis that random-init QA-LoRA fails by gradient overflow
+   whenever the effective model at step 0 is bad enough, and that Qwen2's
+   2-bit Q(W) sits past that threshold while SmolLM2's and TinyLlama's do
+   not. The failure tracks init-function badness, not model identity.
+4. **Oddity flagged, not resolved:** bare Q(R) evals at ~2.5k PPL here while
+   the previously quoted init-only PPLs were higher (Q(W) + zero adapter
+   ~12.2k, Q(R) + SA-SVD adapter ~25.8k, measured in an earlier session).
+   In the garbage regime PPL ordering carries little signal, but if init
+   PPLs are ever quoted again they should be re-measured under one protocol
+   in one session.
+
+### E4 redesigned: now the decisive mechanism experiment
+
+The shift theorem enables a clean control that section 5's E4 lacked: ANY
+group-constant low-rank component can be moved from the base into the
+adapter with (to first order) no change to the init function. Concretely:
+draw random A' (r, n_groups) and B' (out, r), rescale so ||B'A'||_F matches
+the SA-SVD component per layer, set the base to W - B'*expand(A') and the
+adapter to (A', B'). Init function is again approximately Q(W), so it should
+train. Then:
+
+- lands near 36 (sa_svd): the benefit is having a large structured nonzero
+  init at all; "principal components" is the wrong story (B4 wins).
+- lands near 42.5 (baseline): the principal directions themselves carry the
+  benefit; H_init wins and C2 can be stated at full strength.
+
+Updated priority: E4 (mechanism) and E3 (seeds, for the percentages) are the
+two remaining runs that matter. Registered prediction for E4, before any
+run: no confident prediction; genuinely uncertain between the two outcomes,
+which is what makes it worth running.
