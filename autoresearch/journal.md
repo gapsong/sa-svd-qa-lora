@@ -28,6 +28,25 @@ SA-SVD's advantage is budget-dependent and no fast proxy exists, which
 would itself be a headline finding (crossover budget decreasing with model
 size, consistent with the zero-point start-damage mechanism).
 
+v5 (1.7B, rank 16 = the target config, 150 steps, batch 2x8, seed 0):
+sa_svd 48.55 vs zero 45.87. **The flip exists at the target model too.**
+Complete series at 150 steps: 135M 2.00x, 360M 1.29x, 1.7B 1.06x; at 750
+steps on 1.7B: 0.87x (sa_svd wins, 3 seeds). Step-10 losses: sa_svd 13.1
+vs zero 9.9, so the zero-point start damage is universal, not a
+small-model artifact; what varies is recovery speed vs budget.
+
+**HEADLINE FINDING of the proxy validation: SA-SVD's advantage on the
+stock quantizer is budget-dependent. Crossover at 1.7B lies between 150
+and 750 steps; at 360M/135M beyond practical budgets. Practitioners with
+short fine-tuning budgets should not use SA-SVD on stock gptqmodel. The
+qzero_unquantized fork removes exactly the implicated channel and may
+eliminate the crossover entirely; the fork test rises to top priority.**
+
+Operational silver lining: on an uncontended GPU a full 1.7B/150-step arm
+takes ~190s (GPTQ ~2 min, not ~12; earlier estimates were inflated by GPU
+sharing). A loop AT THE TARGET MODEL is feasible once the smallest budget
+with the correct ordering is found (crossover bisection: 450, then 300).
+
 **Research finding worth keeping regardless of the loop:** on the stock
 quantizer, SA-SVD inverts (hurts) on a small, heavily damaged model under
 short budgets, and the deficit shrinks as budget grows. This adds a model
