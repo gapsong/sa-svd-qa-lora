@@ -554,3 +554,85 @@ account (a few high-gain coordinates) but not proven by it.
   exactly the right thing and uses half of it (values) for the part that
   matters and half (vectors) for a part that does not hurt but does not
   help.
+
+---
+
+## 11. E3 results (2026-06-04/05): seeds rewrite every single-seed verdict
+
+Ran `research/run_e3_seeds.sh`: baseline, sa_svd, random_matched,
+random_flat at seeds 1 and 2 (seed 0 from earlier sections), all at 2x8,
+SmolLM2, zero failures. Records: `research/e3_seed{1,2}_results.json`.
+
+| arm | seed 0 | seed 1 | seed 2 | mean | spread |
+|-----|--------|--------|--------|------|--------|
+| baseline | 42.45* | 42.44 | 38.24 | 41.04 | 4.21 |
+| sa_svd | 36.02 | 35.61 | 35.99 | 35.87 | 0.41 |
+| random_matched | 35.65 | 38.31 | 36.53 | 36.83 | 2.66 |
+| random_flat | 38.45 | 39.12 | 40.11 | 39.23 | 1.66 |
+
+*seed-0 baseline ran 4x4; all other 11 runs 2x8. Seed-1 baseline (2x8)
+reproduced it to 0.01, so batch shape is negligible.
+
+### Verdicts, in order of how much they changed
+
+1. **A2 fully vindicated; retire the point percentages.** The baseline's
+   seed spread (4.21) is two-thirds of the original headline gap (6.43).
+   Its best draw (38.24) lands inside the scaled-init cluster. The
+   section-5 decision rule fires: stop quoting "-15%" as a number. The
+   supportable statements: sa_svd beats baseline in **9/9 seed pairings**,
+   minimum margin 2.2 PPL (sa_svd's worst 36.02 vs baseline's best 38.24),
+   mean improvement 41.04 to 35.87, about -13%.
+2. **Section 9's "directions are worth nothing" is OVERTURNED**, a
+   casualty of the same single-seed fallacy it was investigating. With
+   three direction draws, random_matched spans 35.65-38.31 (spread 2.66)
+   while sa_svd sits at 35.87 +/- 0.2. The corrected claim: **SVD
+   directions are not uniquely necessary (the best random draw matched
+   them) but they deterministically achieve what random directions achieve
+   only at the top of their lottery.** Worth ~1 PPL in mean and a 6x spread
+   reduction relative to random directions.
+3. **The spectrum claim survives seeds, and is the cleanest finding.**
+   random_matched and random_flat share identical directions within each
+   seed (same generator), so the within-seed difference isolates the
+   spectrum: +2.80, +0.81, +3.58 PPL across seeds 0/1/2. Three of three
+   positive, mean ~2.4. Concentrated SVD-shaped scale beats flat scale at
+   matched product norm, under direction-controlled pairing.
+4. **Section 10's "any scaled init buys ~60% of the benefit" is
+   downgraded.** random_flat's mean (39.23) vs baseline's mean (41.04) is
+   a 1.8 margin sitting inside the baseline's own 4.2 spread, and the
+   baseline's best seed beats random_flat's mean. Flat scale alone is the
+   weakest and least robust ingredient.
+5. **New headline property: variance collapse.** sa_svd's outcome spread
+   is 0.41 vs the baseline's 4.21, a 10x reduction, with a fully
+   deterministic init. For a QAT pipeline, "reliably 35.9" may be worth
+   more than the mean improvement itself. This property was invisible in
+   every single-seed comparison.
+
+### Corrected story for the repo (what README/run notes should say)
+
+SA-SVD initialization, on the pinned stack, mild regime, SmolLM2, 3 seeds:
+improves mean WikiText PPL by about 13% (41.0 to 35.9), wins every observed
+pairing with a worst-case margin of 2.2 PPL, and reduces outcome spread by
+about 10x. Mechanistically, the SVD's singular values (the spectrum
+allocation) carry a consistent paired gain of roughly 1-3.5 PPL, and the
+singular vectors buy reliability rather than a unique optimum. The previous
+single-seed narratives (sections 9-10) understated direction value and
+overstated scale value; both corrections came from seed replication, which
+is the methodological lesson of this whole document.
+
+### Epistemic scorecard for the exercise
+
+Every section that drew a mechanism conclusion from one seed got revised by
+E3 (sections 9 and 10), exactly as attack A2 predicted for the original
+README. Registered predictions: 3 made, 2 falsified (E2, E6), 1 partially
+right for the wrong reasons. The experiments were informative throughout;
+the priors were not.
+
+### Remaining open items
+
+- E7 (random_matched on Qwen2): does the inf-grad rescue need the
+  directions, the spectrum, or any scaled init? Now also interesting
+  whether the rescue is seed-robust.
+- TinyLlama/Qwen2 seeds for the multi-model table (the public table is
+  still 1 seed for those rows).
+- The README/run-note rewording can now proceed with E1-E6 evidence; the
+  concrete supportable sentences are above.

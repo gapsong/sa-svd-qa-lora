@@ -1,0 +1,32 @@
+{
+  "SmolLM2-1.7B": {
+    "baseline": {
+      "method": "baseline",
+      "model": "HuggingFaceTB/SmolLM2-1.7B",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 38.242835998535156
+    },
+    "sa_svd": {
+      "method": "sa_svd",
+      "model": "HuggingFaceTB/SmolLM2-1.7B",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 35.98793029785156
+    },
+    "random_matched": {
+      "method": "random_matched",
+      "model": "HuggingFaceTB/SmolLM2-1.7B",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 36.52685546875
+    },
+    "random_flat": {
+      "method": "random_flat",
+      "model": "HuggingFaceTB/SmolLM2-1.7B",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 40.11126708984375
+    }
+  }
+}
