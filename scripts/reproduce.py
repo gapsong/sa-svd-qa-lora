@@ -52,11 +52,14 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--method",
-                   choices=["baseline", "sa_svd", "both", "residual_random"],
+                   choices=["baseline", "sa_svd", "both", "residual_random",
+                            "random_matched"],
                    default="both",
                    help="residual_random is the E2 ablation arm "
                         "(research/red-team.md): SA-SVD residual base, but "
-                        "PEFT default adapter init instead of SA-SVD A/B.")
+                        "PEFT default adapter init instead of SA-SVD A/B. "
+                        "random_matched is the E4 arm: SA-SVD spectrum with "
+                        "random orthonormal directions.")
     p.add_argument("--model-id", default=MODEL_ID)
     p.add_argument("--rank", type=int, default=16)
     p.add_argument("--group-size", type=int, default=16)
@@ -99,6 +102,17 @@ def run_one(method: str, args) -> dict:
         sa_svd_adapters = apply_sa_svd_to_base(
             model, names, rank=args.rank, group_size=args.group_size
         )
+    elif method == "random_matched":
+        # E4: SA-SVD's singular values, random orthonormal directions.
+        sys.path.insert(0, str(ROOT / "research"))
+        from e4_random_matched import apply_random_matched_to_base
+
+        names = find_target_linears(model, TARGETS)
+        print(f"Applying random-matched init to {len(names)} layers ...")
+        sa_svd_adapters = apply_random_matched_to_base(
+            model, names, rank=args.rank, group_size=args.group_size,
+            seed=args.seed,
+        )
 
     # ----- Quantize to 2-bit (GPTQ) and attach a QA-LoRA adapter. -----
     # The GPTQ + QA-LoRA wiring uses the public PEFT / GPTQModel API exactly as
@@ -111,9 +125,9 @@ def run_one(method: str, args) -> dict:
         seed=args.seed,
     )
 
-    if method == "sa_svd":
+    if method in ("sa_svd", "random_matched"):
         n = write_adapter_weights(peft_model, sa_svd_adapters)
-        print(f"Wrote SA-SVD init into {n} adapter layers.")
+        print(f"Wrote {method} init into {n} adapter layers.")
 
     # ----- Fine-tune on Alpaca subset. -----
     data = load_dataset("tatsu-lab/alpaca", split=f"train[:{args.n_train_samples}]")
