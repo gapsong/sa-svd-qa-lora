@@ -417,3 +417,75 @@ Updated priority: E4 (mechanism) and E3 (seeds, for the percentages) are the
 two remaining runs that matter. Registered prediction for E4, before any
 run: no confident prediction; genuinely uncertain between the two outcomes,
 which is what makes it worth running.
+
+---
+
+## 9. E4 results (2026-06-04): directions do not matter, the scale story wins
+
+Ran `scripts/reproduce.py --method random_matched` (commit 7b9ef9d): SA-SVD's
+per-layer singular-value spectrum, random orthonormal U'/V'h directions,
+moved into the base exactly like SA-SVD (verified: residual identity to float
+precision, exact match of ||B||, ||A||, ||BA||, group-constant component).
+Conditions: SmolLM2-1.7B, lr 1e-4, seed 0, 750 steps, per-device batch 2 x
+grad-accum 8 (GPU shared with a simulator; same batch shape as the sa_svd
+arm, first attempt at 4x4 OOMed at step ~552 when the simulator started).
+Record in `research/e4_results.json`; log /tmp/e4_random_matched_try2.log.
+
+| arm | base | adapter init | WikiText PPL |
+|-----|------|--------------|--------------|
+| baseline | W | PEFT default (B=0) | 42.45 |
+| sa_svd | R | SVD directions, SVD spectrum | 36.02 |
+| residual_random (E2) | R | PEFT default (B=0) | 2524.88, did not train |
+| random_matched (E4) | R' | random directions, SVD spectrum | **35.65** |
+
+random_matched trained indistinguishably from sa_svd (finite grads 4-7, loss
+2.0 to 1.9, accuracy 56-58%) and finished at 35.65, marginally *better* than
+sa_svd's 36.02. Single seed, so 35.65 vs 36.02 is a tie; both are clearly
+separated from 42.45.
+
+### Verdict: B4 wins, H_init falsified (one model, one seed)
+
+The principal-component directions contribute nothing measurable. An adapter
+with the same singular-value spectrum but random orthonormal directions
+reproduces the full SA-SVD benefit. The run-note sentence "the
+principal-component structure in the adapter gives optimization a better
+direction" is falsified as a mechanism claim on this evidence.
+
+What the active ingredients actually are, per the four-arm table:
+1. A **nonzero, spectrum-scaled adapter init** (sa_svd and random_matched
+   have it, baseline does not): worth ~16% PPL.
+2. The **shift property** that keeps the init function at ~Q(W) (residual
+   swap and adapter component cancel): without restoring the component, the
+   model does not even train (E2).
+3. The **SVD directions**: worth ~nothing (36.02 vs 35.65).
+
+Note the spectrum itself still comes from the pooled SVD, so SA-SVD's
+decomposition is still *used*, just not its directions. Whether the spectrum
+shape matters either (vs any reasonable scale) is untested; see E6 below.
+
+### Consequences for the public claims
+
+- C2 must be reworded. Supported version: "the benefit is an optimization
+  effect of a large, well-scaled, group-constant adapter initialization, not
+  a head start in function space". Unsupported version (current README and
+  run note): "the principal-component structure gives optimization a better
+  direction".
+- The method keeps its practical value: SA-SVD is a deterministic, principled
+  construction of such an init, and computing the spectrum requires the SVD
+  anyway, so nothing simpler is cheaper. But the *story* of why it works must
+  change from "principal components" to "init scale and parameterization".
+- The thesis collapse-regime claims are untouched by this; in the collapse
+  regime the function-space reconstruction may genuinely matter. This verdict
+  applies to the mild regime on the pinned stack.
+
+### New follow-ups surfaced
+
+- **E6 (cheap, decisive for the remaining mechanism):** flat spectrum
+  control: random orthonormal directions with all component scales set to
+  the same value (total norm matched to SA-SVD per layer). If it also lands
+  ~36, even the spectrum shape is irrelevant and the story is purely "init
+  magnitude". If it degrades, the spectrum carries real information.
+- **E7:** run random_matched on Qwen2-1.5B. Prediction (registered now,
+  medium confidence): it rescues the inf-grad failure just like sa_svd did,
+  because the rescue is about init parameterization, not directions.
+- E3 (seeds) unchanged and still needed before quoting any percentage.
