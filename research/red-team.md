@@ -497,3 +497,60 @@ shape matters either (vs any reasonable scale) is untested; see E6 below.
   medium confidence): it rescues the inf-grad failure just like sa_svd did,
   because the rescue is about init parameterization, not directions.
 - E3 (seeds) unchanged and still needed before quoting any percentage.
+
+---
+
+## 10. E6 results (2026-06-04): the spectrum matters, the directions do not
+
+Ran `scripts/reproduce.py --method random_flat` (commit 9d2e2ea): random
+orthonormal directions AND a flat spectrum (every component scale equal,
+product norm ||B'A'||_F matched to SA-SVD per layer). Same conditions as E4
+(2x8, seed 0, lr 1e-4). Record in `research/e6_results.json`; log
+/tmp/e6_random_flat.log. Result: **38.45**. The registered prediction (~36)
+was wrong; that is two falsified predictions (E2, E6) out of three registered,
+which says the experiments were informative rather than confirmatory.
+
+### The five-arm table
+
+| arm | directions | spectrum | WikiText PPL |
+|-----|------------|----------|--------------|
+| baseline | none (B=0) | none | 42.45 |
+| random_flat (E6) | random | flat, norm-matched | 38.45 |
+| random_matched (E4) | random | SVD values | 35.65 |
+| sa_svd | SVD vectors | SVD values | 36.02 |
+| residual_random (E2) | none (B=0) | none, base broken | 2524.88, no train |
+
+### Mechanism decomposition (single seed, SmolLM2, pinned stack)
+
+- Having any well-scaled group-constant nonzero init: 42.45 to 38.45,
+  roughly 60% of the total benefit.
+- Allocating that scale per the pooled SVD spectrum (a few large components
+  instead of equal shares): 38.45 to ~35.8, the remaining roughly 40%.
+- The singular vectors themselves: nothing (36.02 vs 35.65).
+
+Slogan for the corrected story: **the spectrum, not the subspace**. SA-SVD's
+SVD is doing real work, through its singular values, not its singular
+vectors.
+
+A detail that kills the simplest scale story: with the product norm matched,
+the flat spectrum's *factor* norms are larger than SA-SVD's
+(Cauchy-Schwarz: sum(s_k) <= r*c), yet E6 did worse. So "bigger factors,
+more leverage" is not monotonically true; the concentration of scale into a
+few dominant components is what helps. Consistent with an optimizer-dynamics
+account (a few high-gain coordinates) but not proven by it.
+
+### Caveats and consequences
+
+- The E4-vs-E6 gap (35.65 vs 38.45, ~2.8 PPL) is the load-bearing new
+  number and it is single-seed. E3 (seeds) is now needed not just for the
+  headline percentages but to confirm this gap survives noise.
+- C2's supported rewording is refined once more: "the benefit is an
+  optimization effect of a group-constant adapter init whose magnitude is
+  allocated by the pooled weight spectrum; the singular vectors are
+  replaceable, the singular values are not (on this evidence)".
+- For the method: SA-SVD is partially vindicated relative to section 9's
+  verdict. Its decomposition is not decoration; you need the spectrum, and
+  computing it IS the SVD. The honest summary is that SA-SVD computes
+  exactly the right thing and uses half of it (values) for the part that
+  matters and half (vectors) for a part that does not hurt but does not
+  help.
