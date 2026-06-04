@@ -60,10 +60,20 @@ Three regimes are observed: (1) collapse regime (thesis-era stack), repairs a
 broken model (~172 to ~26); (2) gradient-failure regime (Qwen2 on the pinned
 stack), random-init training diverges with inf gradients while SA-SVD trains
 normally (53 to 28); (3) mild regime (SmolLM2, TinyLlama on the pinned
-stack), baseline trains and SA-SVD still gives 15-17%, despite a worse
-init-only perplexity, so the benefit is optimization, not a head start. All
-measured numbers are single-seed. Never claim SA-SVD is a universal
-improvement; the honest framing is load-bearing for credibility.
+stack), baseline trains and SA-SVD still improves PPL (SmolLM2 mean -13%
+over 3 seeds, 9/9 pairings won, ~10x seed-spread reduction; TinyLlama -17%
+single seed).
+
+**Mechanism (measured, ablation 2026-06-05, results/ablation-2026-06-05.md):**
+the residual swap is provably invisible to group-wise quantization
+(group-constant shift absorbs into zero-points), so the benefit is an
+optimization effect of the adapter init. The SVD's singular values carry a
+consistent paired gain (3/3 direction-controlled pairings); the singular
+vectors buy seed-to-seed reliability, not a unique optimum. Do NOT use the
+retired claim "principal components give optimization a better direction"
+or the init-only-PPL "started worse" argument. TinyLlama and Qwen2 rows are
+single-seed. Never claim SA-SVD is a universal improvement; the honest
+framing is load-bearing for credibility.
 
 ---
 
@@ -85,6 +95,13 @@ initialization differs.** The "usable LM" threshold is ~30 PPL. The Qwen2
 baseline had inf gradients at every step (two independent runs) and learned
 nothing; its 53.15 is effectively the unadapted quantized model, so the Qwen2
 row is "trains vs does not train", not "better vs worse".
+
+Seed robustness (2026-06-05, results/ablation-2026-06-05.md): the SmolLM2
+pair was repeated at seeds 1 and 2 plus ablation arms. Baseline
+42.45/42.44/38.24 (spread 4.21), sa_svd 36.02/35.61/35.99 (spread 0.41).
+Quote SmolLM2 as "mean -13%, 9/9 pairings, ~10x spread reduction", NOT as
+"-15%": the baseline's seed spread is two-thirds of the seed-0 gap. The
+table above stays seed-0 for consistency with results.json and the chart.
 
 Context that must not get lost: the thesis reported ~172 (broken) vs ~26
 (usable) for SmolLM2 on an older stack (gptqmodel fork
@@ -229,14 +246,24 @@ gives a faster, noisier sanity run.
   absolute PPLs are pessimistic vs the canonical HF stride recipe. Fair
   across methods. Fixing it changes absolute numbers, so it requires
   re-running all models in one batch; do not fix it piecemeal.
-- Open: investigate the Qwen2 inf-gradient failure of random-init QA-LoRA
-  (likely bf16 overflow in the backward path); interesting in its own right.
+- Resolved 2026-06-05: SmolLM2 seeds + init-mechanism ablation done on the
+  `auto-research` branch (12 runs, 4 arms; results/ablation-2026-06-05.md;
+  full adversarial log in research/red-team.md on that branch). Mechanism
+  claims corrected throughout README/CLAUDE.md/run note.
+- Partially resolved: the Qwen2 inf-gradient failure now has a mechanism
+  lead: a broken-enough step-0 model reproduces the signature on SmolLM2
+  (residual base + zero-contribution adapter), and a scaled group-constant
+  init avoids it regardless of directions (truncated E7 run, 588 clean
+  steps). Root cause in the bf16 backward path still unverified.
 - Open: test the collapse regime by installing the thesis gptqmodel fork
   (`gapsong/GPTQModel@qzero_unquantized`) and re-running; this is what should
   reproduce the ~172 vs ~26 thesis numbers.
-- Optional: 2-3 seeds so the percentages get error bars; FP16 reference PPL
-  per model for context; larger GPTQ calibration set (>=256 samples of >=256
-  tokens, gptqmodel warns about the current 128 short samples).
+- Open: TinyLlama and Qwen2 are still single-seed; rerun with seeds 1-2 to
+  match the SmolLM2 evidence level. E7 final PPL (Qwen2 random_matched)
+  missing; rerun command in research/red-team.md section 12.
+- Optional: FP16 reference PPL per model for context; larger GPTQ
+  calibration set (>=256 samples of >=256 tokens, gptqmodel warns about the
+  current 128 short samples).
 - Optional: fetch the full Apache-2.0 license text into `LICENSE` (currently a
   header stub).
 

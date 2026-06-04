@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
-Reproduce the headline result: SA-SVD repairs a 2-bit SmolLM2-1.7B where the
-standard QA-LoRA baseline fails.
+Reproduce the headline result: SA-SVD initialization vs random-init QA-LoRA
+on a 2-bit SmolLM2-1.7B.
 
 What it does
 ------------
@@ -17,9 +17,11 @@ For each method in {baseline, sa_svd}:
 Results are written to results/results.json and rendered by
 scripts/plot_results.py into assets/hero.png.
 
-Expected outcome (rank=16, group=16), matching the thesis:
-    baseline QA-LoRA : WikiText PPL ~170  (still broken)
-    SA-SVD           : WikiText PPL ~26   (repaired)
+Expected outcome on the pinned stack (rank=16, group=16, seed 0):
+    baseline QA-LoRA : WikiText PPL ~38-42  (seed-dependent)
+    SA-SVD           : WikiText PPL ~36     (stable across seeds)
+(The thesis-era stack showed ~170 vs ~26; that collapse regime does not
+reproduce on stock gptqmodel. See results/ablation-2026-06-05.md.)
 
 Hardware: single 24 GB GPU (e.g. RTX 4090). Approx 1-2 h for both runs.
 

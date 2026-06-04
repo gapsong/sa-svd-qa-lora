@@ -8,8 +8,8 @@ training budget.
 ![SA-SVD vs baseline on 2-bit SmolLM2-1.7B](assets/hero.png)
 
 Three models quantized to 2-bit with GPTQ, then fine-tuned with QA-LoRA under
-identical budgets (rank 16, group 16, 750 steps, single seed). WikiText-2
-perplexity, lower is better:
+identical budgets (rank 16, group 16, 750 steps; the table shows seed 0).
+WikiText-2 perplexity, lower is better:
 
 | Model          | QA-LoRA (random init) | SA-SVD (ours) | delta |
 |----------------|----------------------|---------------|-------|
@@ -17,7 +17,16 @@ perplexity, lower is better:
 | TinyLlama-1.1B | 34.6                 | 28.7          | -17%  |
 | Qwen2-1.5B     | 53.2*                | 27.6          | -48%  |
 
-The only thing that changed is how the adapter was initialized.
+The only thing that changed is how the adapter was initialized. (This is
+literal: the SA-SVD residual swap subtracts a group-constant component, which
+group-wise quantization provably absorbs into its zero-points, so both arms
+start from an equivalent quantized base.)
+
+On SmolLM2 the comparison was repeated over 3 seeds plus a four-arm
+initialization ablation: SA-SVD wins **all 9 seed pairings** (mean 41.0 to
+35.9, about -13%) and cuts the run-to-run spread roughly **10x** (0.4 vs 4.2
+PPL). The TinyLlama and Qwen2 rows are single-seed. Full ablation:
+[`results/ablation-2026-06-05.md`](results/ablation-2026-06-05.md).
 
 *The Qwen2 baseline did not train at all: its gradients overflowed to inf at
 every step (two independent runs), so 53.2 is effectively the unadapted
@@ -81,9 +90,13 @@ weights**, computed so they align with the quantization groups:
 3. **Initialize** the adapter `B, A` from those vectors.
 4. **Quantize the residual** `W - B·expand(A)` as the frozen base.
 
-The adapter now carries the dominant structure of the original weights, so
-fine-tuning starts from a healthy point instead of from noise. It is a
-quantization-aware variant of [PiSSA](https://arxiv.org/abs/2404.02948).
+The adapter now starts from the dominant structure of the group-pooled
+weights instead of from zero. An ablation (see "When it helps") shows what
+carries the benefit: the singular *values* give the adapter a well-scaled
+starting point that trains consistently better than a zero-contribution
+random init, and the singular *vectors* make the outcome reliable across
+seeds. It is a quantization-aware variant of
+[PiSSA](https://arxiv.org/abs/2404.02948).
 
 The whole method is ~80 lines: [`src/sa_svd/core.py`](src/sa_svd/core.py).
 
@@ -102,12 +115,26 @@ helped in all of them, by different amounts:
   (inf gradients, zero learning). SA-SVD initialization makes the same setup
   train, 53.2 to 27.6.
 - **Mild regime** (SmolLM2, TinyLlama on the pinned stack): the baseline
-  trains fine and SA-SVD still gives a consistent 15-17% improvement at zero
-  extra cost. Notably it can win despite a *worse* pre-training perplexity,
-  so the benefit comes from better optimization, not a head start.
+  trains fine and SA-SVD still improves perplexity at zero extra cost
+  (SmolLM2: mean -13% over 3 seeds, all 9 pairings won; TinyLlama: -17%,
+  single seed), and makes the outcome nearly deterministic (about 10x less
+  seed-to-seed spread than random init).
 
-All numbers are single-seed; treat the percentages as indicative. Mapping the
-regime boundary across models and quantizers is ongoing work.
+**What carries the benefit.** A four-arm initialization ablation on SmolLM2
+(3 seeds, [`results/ablation-2026-06-05.md`](results/ablation-2026-06-05.md))
+decomposed the effect. The quantized base is provably equivalent across arms,
+so the benefit is an optimization effect of the adapter init: the SVD's
+singular values carry a consistent gain (concentrated SVD-shaped scales beat
+flat scales of equal total size in 3 of 3 direction-controlled pairings),
+while the SVD's singular vectors buy reliability (random directions with the
+same spectrum sometimes match SA-SVD and sometimes lose most of the gain;
+SA-SVD's deterministic directions land at the top of that range every time).
+The Qwen2 gradient-failure rescue also does not need the directions, only the
+scaled init.
+
+The TinyLlama and Qwen2 numbers are single-seed; treat those percentages as
+indicative. Mapping the regime boundary across models and quantizers is
+ongoing work.
 
 ## Configuration
 
