@@ -636,3 +636,30 @@ the priors were not.
   still 1 seed for those rows).
 - The README/run-note rewording can now proceed with E1-E6 evidence; the
   concrete supportable sentences are above.
+
+---
+
+## 12. E7 result (2026-06-05, truncated): the Qwen2 rescue needs no SVD directions
+
+Ran `scripts/reproduce.py --method random_matched --model-id Qwen/Qwen2-1.5B`
+(lr 3e-5 auto, 2x8, seed 0). The process was externally SIGTERMed at step
+588/750 (78%); training had been healthy the entire time: grad_norm finite
+throughout (9-17, the sa_svd run's reported band), loss 2.1 to 1.97, token
+accuracy ~55%, zero inf-grad steps. Log: /tmp/e7_qwen2_random_matched.log.
+No checkpoints exist (save_strategy="no"), so there is no final PPL.
+
+Verdict: the registered prediction (section 9) is **confirmed on the
+trainability question**. The Qwen2 random-init baseline fails with inf
+gradients at every step from step 1; the random-directions arm trained
+cleanly for 588 steps. The gradient-overflow rescue is a property of the
+scaled, group-constant init parameterization, not of the SVD directions.
+Combined with E2 (a broken-enough init function reproduces the inf-grad
+signature on SmolLM2), the unified picture: random-init QA-LoRA fails when
+the effective step-0 model is past a badness threshold, and any
+function-preserving scaled init steps around the failure.
+
+Not established, deliberately skipped for now (user call, GPU time): the
+final PPL of this arm (expected near sa_svd's 27.61), and whether its
+*quality* shows the same direction-lottery variance as SmolLM2's E3. Rerun
+is one command if needed:
+`python scripts/reproduce.py --method random_matched --model-id Qwen/Qwen2-1.5B --batch-size 2 --grad-accum 8 --results-path research/e7_results.json`
