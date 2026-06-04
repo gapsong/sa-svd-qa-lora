@@ -32,6 +32,7 @@ def apply_random_matched_to_base(
     rank: int,
     group_size: int,
     seed: int,
+    flat_spectrum: bool = False,
 ) -> dict[str, dict[str, torch.Tensor]]:
     """Like sa_svd.apply_sa_svd_to_base, but with random orthonormal directions.
 
@@ -39,6 +40,13 @@ def apply_random_matched_to_base(
     values) and then discards U, Vh in favour of random orthonormal factors.
     Replaces each target weight with W - B'*expand(A') and returns the
     (A', B') adapter components for write_adapter_weights.
+
+    With ``flat_spectrum=True`` (E6), the singular values are additionally
+    replaced by a single constant chosen so the *product* norm ||B'A'||_F
+    matches SA-SVD's ||diag(S_r)||_F per layer. Note a flat spectrum cannot
+    match the product norm and the factor norms simultaneously; the product
+    norm is matched because it is the function-space size of the component
+    that the base subtraction and the eventual zero-point merge both see.
     """
     gen = torch.Generator().manual_seed(seed)
     adapters: dict[str, dict[str, torch.Tensor]] = {}
@@ -55,6 +63,10 @@ def apply_random_matched_to_base(
         # Same pooling + SVD as sa_svd_init, but only the spectrum is kept.
         pooled = W.reshape(out_features, n_groups, group_size).mean(dim=-1)
         S = torch.linalg.svdvals(pooled)[:rank]
+        if flat_spectrum:
+            # Constant spectrum with the same product norm: c*sqrt(r) =
+            # ||diag(S_r)||_F  ->  c = sqrt(sum(s_k^2) / r).
+            S = torch.full_like(S, ((S**2).sum() / rank).sqrt())
         sqrt_s = S.sqrt()
 
         # Random orthonormal directions (QR of Gaussian), float32 on CPU for

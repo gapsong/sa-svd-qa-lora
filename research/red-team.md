@@ -482,9 +482,17 @@ shape matters either (vs any reasonable scale) is untested; see E6 below.
 
 - **E6 (cheap, decisive for the remaining mechanism):** flat spectrum
   control: random orthonormal directions with all component scales set to
-  the same value (total norm matched to SA-SVD per layer). If it also lands
-  ~36, even the spectrum shape is irrelevant and the story is purely "init
-  magnitude". If it degrades, the spectrum carries real information.
+  the same value (product norm ||B'A'||_F matched to SA-SVD per layer; a
+  flat spectrum cannot match product and factor norms simultaneously, and
+  the product norm is what the base subtraction and the merge see). If it
+  also lands ~36, even the spectrum shape is irrelevant and the story is
+  purely "init magnitude". If it degrades, the spectrum carries real
+  information. Wired as `--method random_flat` (flat_spectrum=True in
+  research/e4_random_matched.py). Registered prediction, before the run:
+  ~36, i.e. spectrum shape also does not matter, medium-low confidence.
+  Reasoning: if the mechanism is optimizer leverage from factor magnitude,
+  the per-component allocation should be second-order at rank 16, where the
+  SA-SVD spectrum is fairly flat to begin with on these layers.
 - **E7:** run random_matched on Qwen2-1.5B. Prediction (registered now,
   medium confidence): it rescues the inf-grad failure just like sa_svd did,
   because the rescue is about init parameterization, not directions.

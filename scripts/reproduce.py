@@ -53,13 +53,15 @@ def parse_args():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--method",
                    choices=["baseline", "sa_svd", "both", "residual_random",
-                            "random_matched"],
+                            "random_matched", "random_flat"],
                    default="both",
                    help="residual_random is the E2 ablation arm "
                         "(research/red-team.md): SA-SVD residual base, but "
                         "PEFT default adapter init instead of SA-SVD A/B. "
                         "random_matched is the E4 arm: SA-SVD spectrum with "
-                        "random orthonormal directions.")
+                        "random orthonormal directions. random_flat is the "
+                        "E6 arm: random directions AND a flat spectrum, "
+                        "product norm matched.")
     p.add_argument("--model-id", default=MODEL_ID)
     p.add_argument("--rank", type=int, default=16)
     p.add_argument("--group-size", type=int, default=16)
@@ -102,16 +104,17 @@ def run_one(method: str, args) -> dict:
         sa_svd_adapters = apply_sa_svd_to_base(
             model, names, rank=args.rank, group_size=args.group_size
         )
-    elif method == "random_matched":
+    elif method in ("random_matched", "random_flat"):
         # E4: SA-SVD's singular values, random orthonormal directions.
+        # E6: random directions AND a flat spectrum (product norm matched).
         sys.path.insert(0, str(ROOT / "research"))
         from e4_random_matched import apply_random_matched_to_base
 
         names = find_target_linears(model, TARGETS)
-        print(f"Applying random-matched init to {len(names)} layers ...")
+        print(f"Applying {method} init to {len(names)} layers ...")
         sa_svd_adapters = apply_random_matched_to_base(
             model, names, rank=args.rank, group_size=args.group_size,
-            seed=args.seed,
+            seed=args.seed, flat_spectrum=(method == "random_flat"),
         )
 
     # ----- Quantize to 2-bit (GPTQ) and attach a QA-LoRA adapter. -----
@@ -125,7 +128,7 @@ def run_one(method: str, args) -> dict:
         seed=args.seed,
     )
 
-    if method in ("sa_svd", "random_matched"):
+    if method in ("sa_svd", "random_matched", "random_flat"):
         n = write_adapter_weights(peft_model, sa_svd_adapters)
         print(f"Wrote {method} init into {n} adapter layers.")
 
