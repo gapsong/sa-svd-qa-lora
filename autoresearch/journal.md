@@ -19,6 +19,15 @@ beyond practical proxy budgets.
 **Verdict: SmolLM2-135M cannot proxy the 1.7B ordering at any tested rank
 or budget. Loop remains halted pending a redesign decision.**
 
+v4 (360M, rank 8 = ratio 0.133, 150 steps, batch 8x2, seed 0): sa_svd
+221.72 vs zero 171.81. Still flipped, ratio 1.29x. Size series at 150
+steps: 135M 2.0x, 360M 1.29x, monotone toward the 1.7B/750-step win
+(0.87x). Open discriminator: 1.7B at 150 steps. If sa_svd wins there, the
+flip is a small-model effect and a slow 1.7B loop is valid; if it loses,
+SA-SVD's advantage is budget-dependent and no fast proxy exists, which
+would itself be a headline finding (crossover budget decreasing with model
+size, consistent with the zero-point start-damage mechanism).
+
 **Research finding worth keeping regardless of the loop:** on the stock
 quantizer, SA-SVD inverts (hurts) on a small, heavily damaged model under
 short budgets, and the deficit shrinks as budget grows. This adds a model

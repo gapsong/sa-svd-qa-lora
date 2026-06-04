@@ -70,6 +70,9 @@ def evaluate_wikitext_subset(peft_model, tokenizer, *, max_tokens: int,
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--model-id", default=MODEL_ID,
+                   help="Proxy model. 135M was rejected (inverts the 1.7B "
+                        "ordering, journal v1-v3); 360M under evaluation.")
     # Fixed budget knobs. Change them only by editing program.md first and
     # restarting the whole journal; mid-stream changes break comparability.
     p.add_argument("--max-steps", type=int, default=150)
@@ -95,9 +98,9 @@ def main():
     from sa_svd import find_target_linears, write_adapter_weights
 
     torch.manual_seed(args.seed)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_id)
     model = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID, torch_dtype=torch.bfloat16, device_map="cuda"
+        args.model_id, torch_dtype=torch.bfloat16, device_map="cuda"
     )
 
     # Apply the candidate init. Residual derived here: function preserved.
