@@ -1,0 +1,11 @@
+{
+  "Qwen2-1.5B": {
+    "kaiming": {
+      "method": "kaiming",
+      "model": "Qwen/Qwen2-1.5B",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 28.170509338378906
+    }
+  }
+}

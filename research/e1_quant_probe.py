@@ -64,6 +64,37 @@ def quantize_2bit_rtn(w: torch.Tensor, group_size: int):
     return deq, codes, rng.squeeze(-1)
 
 
+def quantize_2bit_rtn_sym(w: torch.Tensor, group_size: int):
+    """2-bit SYMMETRIC per-group RTN, matching the pipeline's real grid.
+
+    gptqmodel's QuantizeConfig defaults to sym=True (verified 2026-06-05),
+    which the pipeline does not override: scale = 2*max|g|/maxq, zero fixed
+    at 2, dequant levels {-2s, -s, 0, +s}. Only ONE positive level at 2
+    bits, and the grid is anchored to max|g|, so it is NOT shift-equivariant:
+    subtracting a group constant can change every code. This is the grid
+    the E1 theorem does not cover.
+    """
+    out, inp = w.shape
+    g = w.reshape(out, inp // group_size, group_size)
+    xmax = g.abs().amax(dim=-1, keepdim=True)
+    scale = torch.where(xmax > 0, 2.0 * xmax / 3.0, torch.ones_like(xmax))
+    codes = torch.round(g / scale).add_(2).clamp_(0, 3)
+    deq = ((codes - 2.0) * scale).reshape(out, inp)
+    return deq, codes, (2.0 * xmax).squeeze(-1)
+
+
+def random_orthogonal(dim: int, seed: int = 0) -> torch.Tensor:
+    """Seeded Haar-ish random orthogonal matrix (QR of a Gaussian).
+
+    Probes the TurboQuant / QuaRot incoherence idea: rotating the input
+    basis spreads outlier energy across coordinates before quantization.
+    """
+    gen = torch.Generator().manual_seed(seed + dim)
+    m = torch.randn(dim, dim, generator=gen)
+    q, r = torch.linalg.qr(m)
+    return q * torch.sign(torch.diagonal(r)).unsqueeze(0)
+
+
 def grid_health(codes: torch.Tensor):
     """Mean distinct levels per group and mean modal-level occupancy."""
     # codes: (out, n_groups, group_size) with integer values in {0,1,2,3}
@@ -73,18 +104,19 @@ def grid_health(codes: torch.Tensor):
     return distinct.mean().item(), modal.mean().item()
 
 
-def probe_layer(W: torch.Tensor, rank: int, group_size: int) -> dict:
+def probe_layer(W: torch.Tensor, rank: int, group_size: int,
+                quant=quantize_2bit_rtn, q_rot: torch.Tensor | None = None) -> dict:
     res = sa_svd_init(W, rank=rank, group_size=group_size)
     R = res.residual.to(W.device)
     w_norm = W.norm()
 
-    qW, cW, rngW = quantize_2bit_rtn(W, group_size)
-    qR, cR, rngR = quantize_2bit_rtn(R, group_size)
+    qW, cW, rngW = quant(W, group_size)
+    qR, cR, rngR = quant(R, group_size)
 
     distW, modW = grid_health(cW)
     distR, modR = grid_health(cR)
 
-    return {
+    out = {
         "relerr_baseline": ((W - qW).norm() / w_norm).item(),
         "relerr_sa_svd": ((R - qR).norm() / w_norm).item(),
         "median_group_range_W": rngW.median().item(),
@@ -95,6 +127,19 @@ def probe_layer(W: torch.Tensor, rank: int, group_size: int) -> dict:
         "mean_modal_occupancy_R": modR,
         "numel": W.numel(),
     }
+    if q_rot is not None:
+        # Rotated arm: quantize W in a random orthogonal input basis.
+        # ||W @ Q|| == ||W||, so relerr stays comparable.
+        WR = W @ q_rot
+        qX, cX, rngX = quant(WR, group_size)
+        distX, modX = grid_health(cX)
+        out.update({
+            "relerr_rotated": ((WR - qX).norm() / w_norm).item(),
+            "median_group_range_rot": rngX.median().item(),
+            "mean_distinct_levels_rot": distX,
+            "mean_modal_occupancy_rot": modX,
+        })
+    return out
 
 
 def main():
@@ -105,6 +150,12 @@ def main():
     p.add_argument("--device",
                    default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--out", default=str(ROOT / "research" / "e1_results.json"))
+    p.add_argument("--sym", action="store_true",
+                   help="use the pipeline's real symmetric grid instead of "
+                        "the asymmetric min/max proxy")
+    p.add_argument("--rotate", action="store_true",
+                   help="add a third arm: W times a seeded random orthogonal "
+                        "matrix (TurboQuant/QuaRot incoherence probe)")
     args = p.parse_args()
 
     from transformers import AutoModelForCausalLM
@@ -117,10 +168,19 @@ def main():
     print(f"Probing {len(names)} layers on {args.device} "
           f"(rank={args.rank}, group_size={args.group_size}) ...")
 
+    quant = quantize_2bit_rtn_sym if args.sym else quantize_2bit_rtn
+    rot_cache: dict[int, torch.Tensor] = {}
     per_layer: dict[str, dict] = {}
     for i, name in enumerate(names):
         W = model.get_submodule(name).weight.data.to(args.device)
-        per_layer[name] = probe_layer(W, args.rank, args.group_size)
+        q_rot = None
+        if args.rotate:
+            dim = W.shape[1]
+            if dim not in rot_cache:
+                rot_cache[dim] = random_orthogonal(dim).to(args.device)
+            q_rot = rot_cache[dim]
+        per_layer[name] = probe_layer(W, args.rank, args.group_size,
+                                      quant=quant, q_rot=q_rot)
         if (i + 1) % 28 == 0:
             print(f"  {i + 1}/{len(names)}")
 
@@ -156,11 +216,24 @@ def main():
           f"{overall['mean_modal_occupancy_W']:>8.3f} "
           f"{overall['mean_modal_occupancy_R']:>8.3f}")
 
+    if args.rotate:
+        print(f"\n{'module':<10} {'relerr rot':>10} {'levels rot':>10} {'modal rot':>9}")
+        for t in TARGETS:
+            m = by_type[t]
+            print(f"{t:<10} {m['relerr_rotated']:>10.4f} "
+                  f"{m['mean_distinct_levels_rot']:>10.3f} "
+                  f"{m['mean_modal_occupancy_rot']:>9.3f}")
+        print(f"{'OVERALL':<10} {overall['relerr_rotated']:>10.4f} "
+              f"{overall['mean_distinct_levels_rot']:>10.3f} "
+              f"{overall['mean_modal_occupancy_rot']:>9.3f}")
+
+    grid = "symmetric (pipeline grid, sym=True)" if args.sym else "asymmetric min/max"
     out = Path(args.out)
     out.write_text(json.dumps({
         "model": args.model_id, "rank": args.rank,
         "group_size": args.group_size,
-        "quantizer": "2-bit asymmetric per-group RTN (GPTQ proxy, no error compensation)",
+        "quantizer": f"2-bit {grid} per-group RTN (GPTQ proxy, no error compensation)",
+        "rotated_arm": bool(args.rotate),
         "overall": overall, "by_type": by_type, "per_layer": per_layer,
     }, indent=2))
     print(f"\nSaved -> {out}")

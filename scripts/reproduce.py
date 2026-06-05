@@ -55,7 +55,8 @@ def parse_args():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--method",
                    choices=["baseline", "sa_svd", "both", "residual_random",
-                            "random_matched", "random_flat", "kaiming"],
+                            "random_matched", "random_flat", "kaiming",
+                            "sa_svd_white"],
                    default="both",
                    help="residual_random is the E2 ablation arm "
                         "(research/red-team.md): SA-SVD residual base, but "
@@ -122,6 +123,26 @@ def run_one(method: str, args) -> dict:
             model, names, rank=args.rank, group_size=args.group_size,
             seed=args.seed, flat_spectrum=(method == "random_flat"),
         )
+    elif method == "sa_svd_white":
+        # v18: activation-whitened SA-SVD (journal v18). Same pipeline as
+        # sa_svd, but the pooled SVD is whitened with input second moments
+        # collected on the FP16 model from the same WikiText calibration
+        # set GPTQ uses. research/whitened_init.py has the derivation.
+        sys.path.insert(0, str(ROOT / "research"))
+        from pipeline import _calibration_samples
+        from whitened_init import (apply_whitened_sa_svd_to_base,
+                                   collect_input_sq_moments)
+
+        names = find_target_linears(model, TARGETS)
+        print(f"Collecting input moments for {len(names)} layers ...")
+        moments = collect_input_sq_moments(
+            model, names, _calibration_samples(tokenizer, n=64)
+        )
+        print("Applying whitened SA-SVD ...")
+        sa_svd_adapters = apply_whitened_sa_svd_to_base(
+            model, names, rank=args.rank, group_size=args.group_size,
+            moments=moments,
+        )
     elif method == "kaiming":
         # Corrected baseline (journal v12): the init PEFT intends as default
         # (Kaiming A, zero B), written explicitly because peft 0.19.1 leaves
@@ -148,7 +169,8 @@ def run_one(method: str, args) -> dict:
         seed=args.seed,
     )
 
-    if method in ("sa_svd", "random_matched", "random_flat", "kaiming"):
+    if method in ("sa_svd", "random_matched", "random_flat", "kaiming",
+                  "sa_svd_white"):
         n = write_adapter_weights(peft_model, sa_svd_adapters)
         print(f"Wrote {method} init into {n} adapter layers.")
 

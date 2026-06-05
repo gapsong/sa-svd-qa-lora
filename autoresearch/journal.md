@@ -263,6 +263,131 @@ Corrected 3-model summary as of v15 (3 seeds where marked):
 The regime question is the story; per-model evidence is now solid for
 two of three models.
 
+## v16 (2026-06-05): REGISTERED. Qwen2 seeds 1-2, both arms.
+
+Hypothesis: the Qwen2 tie at seed 0 (kaiming 27.90 vs sa_svd 27.61, gap
+0.29 < 2.5 noise bound) is real, not seed luck.
+
+Change: 4 runs, seeds 1 and 2, methods kaiming and sa_svd, Qwen2-1.5B,
+identical budget to v14 (750 steps, batch 2x8, lr 3e-5 via MODEL_LR, full
+eval), results to research/qwen2_seed{1,2}.json.
+
+Registered prediction (written before launch): sa_svd lands 27.6 +/- 1.0
+(deterministic init; spreads were 0.41 / 0.37 on the other two models).
+Kaiming lands 27.9 +/- 2.5 (its spread was 1.27 on SmolLM2, 4.63 on
+TinyLlama). Predicted outcome: mixed cross-seed pairings, mean gap < 2.5,
+and sa_svd's spread again smaller than kaiming's.
+
+Decision rule: TIE CONFIRMED if |mean gap| < 2.5; SA_SVD WIN if sa_svd
+wins >= 8/9 pairings with worst gap > 2.5; KAIMING WIN mirrored. Any
+inf/nan step makes that run FAILED, not a data point. Outcome feeds the
+public rewrite's 3-model table as the third 3-seed row.
+
+## v17 (2026-06-05): REGISTERED. Levels-utilization probe (CPU, no training).
+
+Hypothesis: the model-dependence of SA-SVD (wins TinyLlama, loses SmolLM2,
+ties Qwen2) traces to how much the residual swap improves 2-bit grid
+utilization per quantization group. Secondary: a random orthogonal
+rotation (TurboQuant / QuaRot-style incoherence processing) flattens
+outliers more than residual removal does.
+
+Change: research/levels_probe.py. No training, FP16 weights on CPU.
+Per target layer, simulate the pipeline's 2-bit group quantization
+(group_size 16, same sym setting as scripts/pipeline.py) on three bases:
+(a) raw W, (b) SA-SVD rank-16 residual, (c) W times a random orthogonal
+matrix (seeded QR of Gaussian). Metrics per base: mean effective levels
+used per group (max 4), fraction of collapsed groups (<= 2 levels), and
+relative round-trip Frobenius error. Models: TinyLlama-1.1B, SmolLM2-1.7B,
+Qwen2-1.5B.
+
+Registered prediction (written before run): (1) residual uses more levels
+than raw on all models; (2) the raw-to-residual improvement is clearly
+larger on TinyLlama than on SmolLM2 (this would explain the 1-1-1 table);
+(3) rotation beats residual on level utilization everywhere (theory:
+rotation Gaussianizes coordinates, killing outliers entirely).
+
+Decision rule: EXPLAINS if TinyLlama's collapsed-group-fraction reduction
+(raw to residual) is >= 2x SmolLM2's; UNCLEAR if the same within 2x;
+REFUTED if SmolLM2 improves more than TinyLlama (then grid utilization is
+not the regime variable and the diagnostic must look elsewhere, e.g.
+optimization landscape). Prediction 3 only spawns a follow-up idea
+(rotation baseline) if confirmed; it changes no public claim.
+
+Amendment (same day, BEFORE launch): the duplicate check found
+research/e1_quant_probe.py already measures raw vs residual, so v17
+extends that script (new flags --sym, --rotate) instead of adding a file.
+While matching the grid, a bigger discovery: the pipeline's QuantizeConfig
+defaults to sym=True (verified on the installed gptqmodel 6.0.3), but the
+E1 equivariance theorem (red-team.md section 7) only covers asymmetric,
+group-anchored grids. A symmetric grid (scale from max|w|, zero fixed at
+2, only ONE positive level at 2 bits) is NOT shift-equivariant, so the
+residual swap CAN change codes on the real stack. This is consistent with
+the measured init-only PPLs (residual base worse at init, ~25.8k vs
+~12.2k) and means E1's "structurally dead" verdict was proven for a grid
+the pipeline does not use. Predictions restated before launch: (1) raw
+and residual now expected to DIFFER under sym; direction uncertain, a
+slight residual disadvantage is plausible (init-PPL direction); (2)
+unchanged, evaluated signed; (3) unchanged, rotation flattens most.
+Decision rule unchanged.
+
+**v17 RESULT: REFUTED, and informative.** All 3 models, 168/154/196
+layers, sym grid + rotation arm (research/v17_{smollm2,tinyllama,qwen2}
+.json). Overall numel-weighted:
+
+| model | base | relerr | levels | modal |
+|-------|------|--------|--------|-------|
+| SmolLM2 | raw / residual / rotated | .4364 / .4340 / .4331 | 3.460 / 3.463 / 3.463 | .529 / .527 / .524 |
+| TinyLlama | raw / residual / rotated | .4353 / .4328 / .4332 | 3.459 / 3.465 / 3.462 | .528 / .526 / .524 |
+| Qwen2 | raw / residual / rotated | .4411 / .4382 / .4331 | 3.452 / 3.457 / 3.463 | .537 / .535 / .524 |
+
+Findings:
+1. The sym-grid non-equivariance is real but TINY in effect: residual
+   moves relerr by ~0.0025 (0.6% relative), levels by ~0.005. Far below
+   anything that could explain a 10-PPL training gap.
+2. Prediction 2 REFUTED: TinyLlama's raw-to-residual improvement (0.0025)
+   equals SmolLM2's (0.0024). Static grid utilization is NOT the regime
+   variable. The TinyLlama-vs-SmolLM2 difference must live in training
+   dynamics, not in quantization statistics of the base. This kills the
+   simplest static-weight-statistics predictor idea for the paper.
+3. No resolution collapse anywhere on the stock sym grid: 3.46 of 4
+   levels used on raw weights already, and rotation (the theoretical
+   optimum, Gaussianizing all three models to identical stats .4331/3.46)
+   buys almost nothing. At group_size 16, groups are small enough that
+   outliers are already localized; TurboQuant/QuaRot incoherence would
+   matter at coarser grouping, not here. Consistent with v14: the modern
+   stock quantizer is simply not in the collapse regime.
+4. E1's "structurally dead" verdict survives in practice (the effect
+   direction even favors residual slightly), but its theorem must be
+   cited as asym-only; red-team.md section 7 needs a forward note.
+
+## v18 (2026-06-05): REGISTERED. Activation-whitened SA-SVD.
+
+Hypothesis: plain SA-SVD's data-blindness costs it on SmolLM2 (the model
+where it loses to kaiming 35.87 vs 34.08); whitening the pooled SVD with
+input second moments (diagonal ASVD/SVD-LLM idea under the group-constant
+constraint) allocates rank to directions that matter for W*x and improves
+final PPL.
+
+Change: research/whitened_init.py (d^2-weighted group pooling, SVD of
+W_tilde*diag(g), A unwhitened by 1/g; residual identity preserved by
+construction, unit-checked: uniform moments reproduce plain sa_svd
+exactly). New method sa_svd_white in reproduce.py; moments from 64
+WikiText calibration samples on the FP16 model (same distribution GPTQ
+calibrates on). 2 runs at seed 0: SmolLM2 and TinyLlama, batch 2x8,
+results research/whitened.json.
+
+Registered prediction (written before launch): SmolLM2 sa_svd_white lands
+33.0-36.0 (uncertain; better than plain 35.87 if data-blindness matters).
+TinyLlama lands 28.5 +/- 1.5 (whitening should not destroy the win; if it
+jumps to ~38 the benefit was specifically the unwhitened directions,
+which would itself be a finding).
+
+Decision rule: PROMISING if white beats plain sa_svd by > 2.5 on SmolLM2
+(then run seeds 1-2); NEUTRAL if within +/- 2.5 on both models (KEEP
+plain sa_svd for the public story, file whitening as a negative ablation);
+HARMFUL if white loses by > 2.5 anywhere. Single-seed deltas < 2.5 are
+noise per calibration.
+
 ## v1 (rank 16): ARCHIVED, proxy invalid (sign flip)
 
 **Current best:** exact SA-SVD (reference), MEAN 435.22 (avg of exp 0 and 0b)

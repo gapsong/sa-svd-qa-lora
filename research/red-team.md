@@ -309,6 +309,18 @@ deviation is real at PPL level. Direction of that data point: the residual
 base came out **worse** at init, not better. So the only known deviation from
 equivariance points *against* H_base, not for it.
 
+**Forward note (2026-06-05, journal v17): the theorem's premise does not
+match the pipeline.** The pipeline's QuantizeConfig defaults to sym=True
+(verified on the installed gptqmodel 6.0.3), and a symmetric grid (scale
+anchored to max|g|, zero fixed at 2) is NOT shift-equivariant, so the
+equivariance proof above covers a grid the pipeline does not use. The
+empirical conclusion survives anyway: re-probing all three models with the
+real sym grid plus a rotation arm (e1_quant_probe.py --sym --rotate,
+research/v17_*.json) shows the residual swap moves relative error by only
+~0.0025 and levels-used by ~0.005, identically across models. H_base stays
+dead in practice, but cite the theorem as asym-only and this measurement
+as the sym-grid evidence.
+
 ### Verdict and updated ranking
 
 - **A1/B1 downgraded HIGH to LOW.** The textual point stands (the matrix fed
