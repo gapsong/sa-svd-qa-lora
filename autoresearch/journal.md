@@ -210,6 +210,59 @@ Open next: TinyLlama/Qwen2 kaiming seeds 1-2, TinyLlama sa_svd seeds 1-2
 (its 28.68 is also single-seed), upstream issue filing (drafts ready),
 fork test, then the one coherent public-text rewrite with this table.
 
+## v15 (2026-06-05): REGISTERED. TinyLlama seeds 1-2, both arms.
+
+Hypothesis: the TinyLlama ordering (sa_svd 28.68 beats written-Kaiming
+40.90 by 12.2 PPL at seed 0) is a property of the model, not seed luck.
+
+Change: 4 runs, seeds 1 and 2, methods kaiming and sa_svd, identical
+budget to v14 (750 steps, batch 2x8, lr 1e-4, full eval), results to
+research/tinyllama_seed{1,2}.json.
+
+Registered prediction (written before launch): based on the SmolLM2 seed
+behavior, sa_svd lands 28.7 +/- 1.0 (it is deterministic given W; only
+data order and GPU noise vary) and kaiming lands 40.9 +/- 2.5 (Kaiming
+spread was 1.27 on SmolLM2, and TinyLlama looks noisier). Predicted
+outcome: sa_svd wins all 9 cross-seed pairings with a minimum gap > 5.
+
+Decision rule: CONFIRMED if sa_svd wins >= 8/9 pairings and the worst-case
+gap exceeds 2.5 (the single-run noise bound); UNCLEAR if pairings are
+mixed; REFUTED if kaiming wins the means. If CONFIRMED, the public rewrite
+presents TinyLlama as the regime where SA-SVD genuinely helps on the
+stock quantizer, with 3-seed evidence on both arms.
+
+**v15 RESULT: CONFIRMED, 9/9.** All runs healthy (0 inf/nan steps).
+
+| seed | kaiming | sa_svd |
+|------|---------|--------|
+| 0 (v14) | 40.90 | 28.68 |
+| 1 | 36.27 | 28.35 |
+| 2 | 38.88 | 28.31 |
+| mean (spread) | 38.68 (4.63) | **28.45 (0.37)** |
+
+sa_svd wins all 9 cross-seed pairings; worst case 28.68 vs 36.27, gap
+7.59 > 2.5. Prediction scorecard: sa_svd band hit (predicted +/- 1.0,
+got 0.37 spread); kaiming band MISSED (predicted 40.9 +/- 2.5, seed 1
+came in at 36.27): the written-Kaiming arm itself is far noisier on
+TinyLlama (spread 4.63) than on SmolLM2 (1.27), which is its own finding.
+Minimum-gap prediction (>5) held: 7.59.
+
+Two extra observations worth keeping:
+1. The illusion-of-convergence pattern generalizes: kaiming reaches LOWER
+   train loss (1.25 vs sa_svd's 1.53) in all seeds yet is ~10 PPL worse
+   on WikiText. Fitting Alpaca better, generalizing worse; exactly why
+   WikiText (never seen in training) stays the headline metric.
+2. SA-SVD's seed robustness now replicates across models: spread 0.41
+   (SmolLM2) and 0.37 (TinyLlama) vs Kaiming's 1.27 and 4.63. The
+   13x spread reduction on TinyLlama exceeds the SmolLM2 effect.
+
+Corrected 3-model summary as of v15 (3 seeds where marked):
+- SmolLM2-1.7B: kaiming 34.08* beats sa_svd 35.87* (3 seeds each)
+- TinyLlama-1.1B: sa_svd 28.45* beats kaiming 38.68* (3 seeds each)
+- Qwen2-1.5B: tie at ~27.6-27.9 (1 seed each)
+The regime question is the story; per-model evidence is now solid for
+two of three models.
+
 ## v1 (rank 16): ARCHIVED, proxy invalid (sign flip)
 
 **Current best:** exact SA-SVD (reference), MEAN 435.22 (avg of exp 0 and 0b)

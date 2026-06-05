@@ -1,0 +1,18 @@
+{
+  "TinyLlama_v1.1": {
+    "kaiming": {
+      "method": "kaiming",
+      "model": "TinyLlama/TinyLlama_v1.1",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 38.876991271972656
+    },
+    "sa_svd": {
+      "method": "sa_svd",
+      "model": "TinyLlama/TinyLlama_v1.1",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 28.3111572265625
+    }
+  }
+}
