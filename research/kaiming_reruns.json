@@ -1,0 +1,29 @@
+{
+  "SmolLM2-1.7B": {
+    "kaiming": {
+      "method": "kaiming",
+      "model": "HuggingFaceTB/SmolLM2-1.7B",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 34.75876235961914
+    }
+  },
+  "TinyLlama_v1.1": {
+    "kaiming": {
+      "method": "kaiming",
+      "model": "TinyLlama/TinyLlama_v1.1",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 40.90291976928711
+    }
+  },
+  "Qwen2-1.5B": {
+    "kaiming": {
+      "method": "kaiming",
+      "model": "Qwen/Qwen2-1.5B",
+      "rank": 16,
+      "group_size": 16,
+      "wikitext_ppl": 27.899486541748047
+    }
+  }
+}

@@ -170,6 +170,46 @@ script that produced the published table. TinyLlama/Qwen2 reruns queued
 Issue drafts for both upstreams: research/upstream-bug-reports.md (NOT
 filed; awaiting review). Neither bug has an existing upstream issue.
 
+## v14 (2026-06-05): corrected 3-model table. The verdict is 1-1-1, model-dependent.
+
+Kaiming rerun queue complete (research/run_kaiming_reruns.sh, all runs
+seed 0, batch 2x8, 750 steps, full eval, healthy by checklist: zero
+inf/nan grad steps everywhere):
+
+| model | kaiming (corrected baseline) | sa_svd | verdict |
+|-------|------------------------------|--------|---------|
+| SmolLM2-1.7B | **34.76** | 36.02 | kaiming wins (3-seed confirmed, v12) |
+| TinyLlama-1.1B | 40.90 | **28.68** | sa_svd wins by 12.2 PPL |
+| Qwen2-1.5B | 27.90 | 27.61 | tie (0.29 < 2.3 noise) |
+
+Results: research/kaiming_reruns.json. The old baseline column (42.45 /
+34.63 / 53.15) is retired: junk-init opponents, not Kaiming.
+
+Reinterpretations this forces:
+1. The Qwen2 "did not train, inf grads at every step" regime is DEAD as a
+   regime: written-Kaiming trains cleanly at 3e-5 (0 inf steps, loss
+   5.09 -> 1.51) and matches sa_svd. The -48% row was entirely the
+   uninitialized-adapter artifact.
+2. LR check: Qwen2 at 1e-4 also trains cleanly (0 inf steps) but
+   generalizes worse: train loss 1.30 (lower than 3e-5's 1.51), WikiText
+   33.23 (worse than 27.90). The per-model 3e-5 stays justified, but on
+   generalization grounds, not stability; mini "illusion of convergence".
+3. TinyLlama is the new interesting case: sa_svd beats a HEALTHY Kaiming
+   baseline by 12 PPL. Single seed on both sides; seeds 1-2 are the
+   obvious next runs before any public claim. Note the old junk baseline
+   (34.63) happened to BEAT proper Kaiming (40.90) here, which is why
+   junk-vs-written comparisons are uninterpretable in either direction.
+4. The corrected story is neither "SA-SVD always wins" (old table) nor
+   "Kaiming beats SA-SVD" (v12, which generalized from SmolLM2 alone).
+   It is model-dependent: 1 win, 1 loss, 1 tie. The regime question
+   (WHEN does the init help?) is back at the center, now on a clean
+   comparison. v12's verdict sentence is corrected forward by this entry:
+   "corrected baseline beats SA-SVD" holds for SmolLM2 only.
+
+Open next: TinyLlama/Qwen2 kaiming seeds 1-2, TinyLlama sa_svd seeds 1-2
+(its 28.68 is also single-seed), upstream issue filing (drafts ready),
+fork test, then the one coherent public-text rewrite with this table.
+
 ## v1 (rank 16): ARCHIVED, proxy invalid (sign flip)
 
 **Current best:** exact SA-SVD (reference), MEAN 435.22 (avg of exp 0 and 0b)
