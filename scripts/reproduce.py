@@ -55,7 +55,7 @@ def parse_args():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--method",
                    choices=["baseline", "sa_svd", "both", "residual_random",
-                            "random_matched", "random_flat"],
+                            "random_matched", "random_flat", "kaiming"],
                    default="both",
                    help="residual_random is the E2 ablation arm "
                         "(research/red-team.md): SA-SVD residual base, but "
@@ -63,7 +63,11 @@ def parse_args():
                         "random_matched is the E4 arm: SA-SVD spectrum with "
                         "random orthonormal directions. random_flat is the "
                         "E6 arm: random directions AND a flat spectrum, "
-                        "product norm matched.")
+                        "product norm matched. kaiming is the corrected "
+                        "baseline: PEFT's intended default init (Kaiming A, "
+                        "zero B) written explicitly, because peft 0.19.1 "
+                        "never initializes the QA-LoRA default adapter "
+                        "(autoresearch/journal.md v11).")
     p.add_argument("--model-id", default=MODEL_ID)
     p.add_argument("--rank", type=int, default=16)
     p.add_argument("--group-size", type=int, default=16)
@@ -118,6 +122,20 @@ def run_one(method: str, args) -> dict:
             model, names, rank=args.rank, group_size=args.group_size,
             seed=args.seed, flat_spectrum=(method == "random_flat"),
         )
+    elif method == "kaiming":
+        # Corrected baseline (journal v12): the init PEFT intends as default
+        # (Kaiming A, zero B), written explicitly because peft 0.19.1 leaves
+        # the QA-LoRA default adapter uninitialized on the GPTQ layer path.
+        # Base weights are untouched: B=0 means zero contribution at step 0.
+        sys.path.insert(0, str(ROOT / "research"))
+        from kaiming_init import build_kaiming_adapters
+
+        names = find_target_linears(model, TARGETS)
+        print(f"Building written-Kaiming init for {len(names)} layers ...")
+        sa_svd_adapters = build_kaiming_adapters(
+            model, names, rank=args.rank, group_size=args.group_size,
+            seed=args.seed,
+        )
 
     # ----- Quantize to 2-bit (GPTQ) and attach a QA-LoRA adapter. -----
     # The GPTQ + QA-LoRA wiring uses the public PEFT / GPTQModel API exactly as
@@ -130,7 +148,7 @@ def run_one(method: str, args) -> dict:
         seed=args.seed,
     )
 
-    if method in ("sa_svd", "random_matched", "random_flat"):
+    if method in ("sa_svd", "random_matched", "random_flat", "kaiming"):
         n = write_adapter_weights(peft_model, sa_svd_adapters)
         print(f"Wrote {method} init into {n} adapter layers.")
 

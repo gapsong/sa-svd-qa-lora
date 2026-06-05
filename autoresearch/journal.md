@@ -138,6 +138,38 @@ size / budget axis to the regime map and strengthens the case for testing
 the thesis fork (qzero_unquantized), which removes exactly the zero-point
 channel implicated here.
 
+## v13 (2026-06-05): root cause refined. The leak is gptqmodel's, PEFT is the second link.
+
+Two stage probes on SmolLM2-135M (logs: /tmp/peft_bug_stage_probe.py,
+/tmp/init_leak_probe.py) replace v11's inferred "meta materialization"
+link with a proven mechanism:
+
+1. `GPTQModel.from_pretrained` (gptqmodel 6.0.3 loader.py:305-310; still
+   on main at 685-690) globally replaces torch.nn.init.kaiming_uniform_,
+   uniform_, normal_ with a no-op `skip` and NEVER restores them. Function
+   identity probe: the stub is live after from_pretrained, quantize,
+   save_quantized, AND from_quantized (whose own suspend_hf_weight_init
+   CM captures the stub as "original" at entry and faithfully restores
+   the stub at exit). Control: a fresh nn.Linear(36,4) created after the
+   pipeline has weight std 1e-4 instead of kaiming's ~0.096.
+2. Therefore PEFT's reset_lora_parameters is ALSO a no-op at adapter
+   creation time: the probe shows junk (std=inf in bf16) in lora_A even
+   BEFORE the QALoRA variant replacement. The variant replacement
+   (variants.py:486 in 0.19.1, 489-496 on main) then swaps in a second
+   uninitialized tensor and never re-inits: two independent bugs, both
+   needed for the v11 disaster, each reportable on its own.
+3. Our written inits (sa_svd, kaiming, all E-series arms) are immune:
+   they use Tensor.uniform_ and copy_, not torch.nn.init.
+
+Crosscheck landed: `reproduce.py --method kaiming` (new, public pipeline,
+batch 2x8, seed 0) gives SmolLM2-1.7B **34.76** vs the harness v12 arm's
+34.78. The corrected-baseline result is now reproducible through the same
+script that produced the published table. TinyLlama/Qwen2 reruns queued
+(research/run_kaiming_reruns.sh, VRAM-guarded).
+
+Issue drafts for both upstreams: research/upstream-bug-reports.md (NOT
+filed; awaiting review). Neither bug has an existing upstream issue.
+
 ## v1 (rank 16): ARCHIVED, proxy invalid (sign flip)
 
 **Current best:** exact SA-SVD (reference), MEAN 435.22 (avg of exp 0 and 0b)
